@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { addEntry, deleteEntry, signOut, updateEntry } from "@/app/actions";
 
 export type Entry = {
@@ -49,16 +49,26 @@ export default function Dashboard({
         const html5QrCode = new Html5Qrcode(scanElId);
         scannerRef.current = html5QrCode;
 
-        const cameras = await Html5Qrcode.getCameras();
-        const cameraId = cameras?.[0]?.id;
-        if (!cameraId) throw new Error("No camera found");
+        // Trigger permission prompt early
+        await Html5Qrcode.getCameras();
 
         await html5QrCode.start(
-          cameraId,
-          { fps: 12, qrbox: { width: 250, height: 250 } },
+          // Prefer rear camera on phones
+          { facingMode: "environment" },
+          ({
+            fps: 12,
+            qrbox: { width: 250, height: 250 },
+            // Some versions' TS types lag behind runtime support.
+            // Cast to any to allow barcode formats.
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E,
+            ],
+          } as any),
           async (decodedText) => {
             if (cancelled) return;
-            // Barcodes often appear as numeric strings.
             const clean = decodedText.replace(/[^0-9]/g, "");
             if (clean.length >= 8) {
               setAddBarcode(clean);
