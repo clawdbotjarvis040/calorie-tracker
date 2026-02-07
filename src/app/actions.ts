@@ -13,7 +13,7 @@ const entrySchema = z.object({
 });
 
 export async function addEntry(formData: FormData): Promise<void> {
-  const parsed = entrySchema.parse({
+  const result = entrySchema.safeParse({
     occurred_on: String(formData.get("occurred_on") ?? ""),
     name: String(formData.get("name") ?? ""),
     calories: formData.get("calories"),
@@ -22,12 +22,24 @@ export async function addEntry(formData: FormData): Promise<void> {
       : null,
   });
 
+  if (!result.success) {
+    // Avoid throwing here: an exception in a Server Action can surface as an
+    // application error page (especially on mobile refresh/back).
+    console.error("addEntry validation failed", result.error.flatten());
+    return;
+  }
+
+  const parsed = result.data;
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) throw new Error("Not signed in");
+  if (!user) {
+    console.error("addEntry: not signed in");
+    return;
+  }
 
   const { error } = await supabase.from("food_entries").insert({
     user_id: user.id,
@@ -37,13 +49,16 @@ export async function addEntry(formData: FormData): Promise<void> {
     barcode: parsed.barcode,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("addEntry insert failed", error);
+    return;
+  }
 
   revalidatePath("/");
 }
 
 export async function updateEntry(formData: FormData): Promise<void> {
-  const parsed = entrySchema.parse({
+  const result = entrySchema.safeParse({
     id: String(formData.get("id") ?? ""),
     occurred_on: String(formData.get("occurred_on") ?? ""),
     name: String(formData.get("name") ?? ""),
@@ -53,7 +68,17 @@ export async function updateEntry(formData: FormData): Promise<void> {
       : null,
   });
 
-  if (!parsed.id) throw new Error("Missing id");
+  if (!result.success) {
+    console.error("updateEntry validation failed", result.error.flatten());
+    return;
+  }
+
+  const parsed = result.data;
+
+  if (!parsed.id) {
+    console.error("updateEntry: missing id");
+    return;
+  }
 
   const supabase = await createClient();
 
@@ -67,18 +92,27 @@ export async function updateEntry(formData: FormData): Promise<void> {
     })
     .eq("id", parsed.id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("updateEntry update failed", error);
+    return;
+  }
 
   revalidatePath("/");
 }
 
 export async function deleteEntry(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Missing id");
+  if (!id) {
+    console.error("deleteEntry: missing id");
+    return;
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.from("food_entries").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("deleteEntry delete failed", error);
+    return;
+  }
 
   revalidatePath("/");
 }
